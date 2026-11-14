@@ -498,3 +498,128 @@ def track(key:str,negative_id:int,positive_id:int,threshold:Annotated[float,Quer
             except ValueError as exc:row['reason']=str(exc)
         rows.append(row)
     return dict(epochs=rows,note='Linear path from a chosen two-epoch lobe association. Nearest residual matches within 3 pixels are tentative; all comparisons share a reference and have correlated errors.')
+
+
+@router.get('/workspace/sessions/{key}/fingerprint')
+def source_fingerprint(key: str, ra: Annotated[float, Query(ge=0, lt=360)],
+                       dec: Annotated[float, Query(ge=-90, le=90)],
+                       frame: Annotated[int, Query(ge=0)], scope: Literal['session', 'library']='library',
+                       days: Annotated[int, Query(ge=1, le=30)]=7):
+    s = session(key)
+    if frame >= len(s['frames']):
+        raise HTTPException(422, 'Choose a valid anchor observation.')
+    anchor = s['frames'][frame].timestamp
+    if not anchor:
+        raise HTTPException(422, 'The anchor observation has no FITS timestamp.')
+    sky = SkyCoord(ra, dec, unit='deg')
+    return measure_fingerprint(s, anchor, scope, days, lambda _: sky)
+
+
+@router.get('/analysis/{key}/fingerprint')
+def candidate_fingerprint(key: str, candidate_id: Annotated[int, Query(ge=1)],
+                          positive_id: Annotated[int | None, Query(ge=1)]=None,
+                          threshold: Annotated[float, Query(ge=3, le=50)]=5,
+                          min_pixels: Annotated[int, Query(ge=2, le=100)]=3,
+                          scope: Literal['session', 'library']='library',
+                          days: Annotated[int, Query(ge=1, le=30)]=7):
+    result = analysis(key)
+    items = {c['id']: c for c in proc.candidates(result, threshold, min_pixels)}
+    candidate = items.get(candidate_id)
+    if not candidate:
+        raise HTTPException(422, 'Select a residual from this comparison.')
+    older = result['metadata']['reference_timestamp']
+    newer = result['metadata']['new_timestamp']
+    sky = SkyCoord(candidate['ra_deg'], candidate['dec_deg'], unit='deg')
+    if positive_id is None:
+        anchor = newer if candidate['sign'] == 'positive' else older
+        return measure_fingerprint(result['session'], anchor, scope, days, lambda _: sky)
+    positive = items.get(positive_id)
+    if candidate['sign'] != 'negative' or not positive or positive['sign'] != 'positive':
+        raise HTTPException(422, 'Select one negative and one positive residual to define a path.')
+    target = SkyCoord(positive['ra_deg'], positive['dec_deg'], unit='deg')
+    t0, t1 = Time(older), Time(newer)
+    duration = (t1-t0).to_value(u.s)
+    separation, direction = sky.separation(target), sky.position_angle(target)
+    if not duration or separation.arcsec <= 0 or separation.arcsec > 3600:
+        raise HTTPException(422, 'Select a motion hypothesis within the supported range.')
+
+    def follow(date):
+        fraction = (date-t0).to_value(u.s)/duration
+        return sky.directional_offset_by(direction, separation*fraction) if 0 <= fraction <= 1 else None
+
+    return measure_fingerprint(result['session'], newer, scope, days, follow,
+                               motion_window=(t0, t1))
+
+
+def measure_fingerprint(s, anchor, scope, days, position, motion_window=None):
+    from backend.fingerprint import forced_photometry
+    from backend.spectral_templates import classify
+
+    base_ids = s['body'].ids
+    subtract_zodi = s['body'].subtract_zodi
+    records = {file_id: frame.timestamp for file_id, frame in zip(base_ids, s['frames'])}
+    if scope == 'library':
+        # Read snapshots without loading unrelated multi-megabyte FITS files.
+        for path in service().DATA_DIR.glob('*.json'):
+            if len(path.stem) != 64 or path.stem in records:
+                continue
+            try:
+                snapshot = json.loads(path.read_text()).get('metadata', {})
+                date = (snapshot.get('timestamp') or {}).get('value')
+                if isinstance(date, str) and any(e['name']=='EPSF' for e in snapshot.get('extensions', [])):
+                    records[path.stem] = date
+            except (OSError, ValueError, KeyError, TypeError):
+                continue
+    t_anchor = Time(anchor)
+    eligible, unavailable = [], []
+    for file_id, date in records.items():
+        if not date:
+            unavailable.append(dict(id=file_id, reason='No FITS observation date.'))
+            continue
+        try:
+            time = Time(date)
+            offset = abs((time-t_anchor).to_value(u.day))
+            if (motion_window and not min(motion_window) <= time <= max(motion_window)) or (not motion_window and offset > days):
+                continue
+        except (ValueError, TypeError):
+            continue
+        eligible.append((file_id, offset))
+    eligible.sort(key=lambda item: (item[0] not in base_ids, item[1], item[0]))
+    samples, seen = [], set()
+    for file_id, _ in eligible[:120]:
+        try:
+            obs = service().load(file_id)
+            timestamp = proc.timestamp(obs)
+            if not timestamp:
+                raise ValueError('No FITS observation date.')
+            time = Time(timestamp)
+            sky = position(time)
+            if sky is None or (not motion_window and abs((time-t_anchor).to_value(u.day)) > days):
+                raise ValueError('FITS timestamp is outside the selected interval.')
+            header = obs.headers['IMAGE']
+            exposure = (header.get('OBSID'), header.get('DETECTOR'), timestamp)
+            if exposure in seen:
+                raise ValueError('Another cached file represents the same exposure and detector.')
+            sample = forced_photometry(obs, sky, subtract_zodi)
+            record = json.loads((service().DATA_DIR / f'{file_id}.json').read_text())
+            seen.add(exposure)
+            archive_url = (record.get('archive') or {}).get('original_url')
+            samples.append(dict(id=file_id, filename=record.get('filename', file_id),
+                                source_url=archive_url, timestamp=timestamp, **sample))
+        except (HTTPException, ValueError, TypeError, OSError, KeyError, np.linalg.LinAlgError) as exc:
+            unavailable.append(dict(id=file_id, reason=str(exc.detail if isinstance(exc, HTTPException) else exc)))
+    samples.sort(key=lambda p: (p['wavelength_um'], p['timestamp']))
+    return dict(samples=samples, unavailable=unavailable, scanned=min(len(eligible), 120),
+                eligible=len(eligible), anchor=anchor, motion=motion_window is not None,
+                zodi_subtracted=subtract_zodi, classification=classify(samples, motion_window is not None, service().DATA_DIR / 'spectral-templates'))
+
+
+@router.get('/catalog/nearby')
+def nearby_objects(ra: Annotated[float, Query(ge=0, lt=360)],
+                   dec: Annotated[float, Query(ge=-90, le=90)]):
+    from backend.catalog import CatalogUnavailable, search_nearby
+
+    try:
+        return search_nearby(round(ra, 7), round(dec, 7))
+    except CatalogUnavailable as exc:
+        raise HTTPException(503, 'SIMBAD is temporarily unavailable. Try the lookup again.') from exc

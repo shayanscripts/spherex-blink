@@ -71,7 +71,12 @@ def register(path: Path, filename: str) -> dict:
     record = DATA_DIR / f"{digest}.json"
     if not record.exists():
         record.write_text(json.dumps(dict(filename=filename)))
-    return metadata(digest)
+    result = metadata(digest)
+    snapshot = json.loads(record.read_text())
+    if 'metadata' not in snapshot:
+        snapshot['metadata'] = result
+        record.write_text(json.dumps(snapshot))
+    return result
 
 
 def require_layer(obs: Observation, layer: str):

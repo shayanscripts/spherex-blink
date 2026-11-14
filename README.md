@@ -1,10 +1,21 @@
-# SPHEREx Sky Explorer · Real-data science workspace
+# SPHEREx Blink · SkyMotion Explorer
 
-A Next.js App Router + TypeScript + Tailwind dashboard with a separate Python/FastAPI + Astropy scientific service. The application displays uploaded FITS measurements only. It contains no simulated sky or fabricated observation dates.
+Explore real NASA SPHEREx FITS observations, compare the same sky region on two dates, and inspect where it appears to have changed. The app uses a Next.js frontend and a Python/FastAPI backend with Astropy and Reproject.
+
+| What you want to know | Where to look |
+| --- | --- |
+| What got brighter or fainter? | **Simple → Motion Explorer → Subtract images** |
+| Could something have moved? | **What changed? → Possible motion** |
+| Is there a known object nearby? | Click a numbered marker or choose it under **Look up an object** |
+| What does the source's infrared spectrum look like? | Click a marker, then **View spectral fingerprint** |
+| How do I add more dates or wavelengths? | **Downloads** |
+| Where are the original pixel values and FITS headers? | **Complex → Explore / Data Inspector** |
+
+A marker is evidence that a patch changed in the subtraction. A motion arrow is a suggested association between two patches. A nearby catalog object or a similar spectrum can help investigate the change, but neither identifies its cause on its own.
 
 ## Run locally
 
-Use **Node.js 20.9+** and **Python 3.13**. The pinned Python packages are intended for a Python 3.13 virtual environment.
+Requirements: **Node.js 20.9+**, npm, and **Python 3.13**. Commands below use a Unix shell.
 
 ```bash
 git clone https://github.com/M-Arham07/spherex-blink.git
@@ -14,162 +25,146 @@ python3.13 -m venv .venv
 .venv/bin/python -m pip install -r backend/requirements.txt
 ```
 
-Start the Python API in one terminal:
+Start the Python API from the project root in one terminal:
 
 ```bash
 npm run backend
 ```
 
-In a second terminal in the same folder, start Next.js:
+In a second terminal, start the frontend:
 
 ```bash
 BACKEND_URL=http://127.0.0.1:8000 npm run dev -- --port 3001
 ```
 
-Open **http://127.0.0.1:3001**. The frontend proxies requests to the API on port 8000. If the app reports that the API is unavailable, check `curl http://127.0.0.1:3001/api/science/health`. On shells that do not support inline environment variables, put `BACKEND_URL=http://127.0.0.1:8000` in `.env.local` and run `npm run dev -- --port 3001`.
+Open [http://127.0.0.1:3001](http://127.0.0.1:3001). Next.js forwards science requests to port 8000. On shells without inline environment assignment, set `BACKEND_URL=http://127.0.0.1:8000` in `.env.local` before starting Next.js. On Windows, create the venv with `py -3.13 -m venv .venv` and use `.venv\Scripts\python.exe` for pip and for `-m uvicorn backend.main:app --host 127.0.0.1 --port 8000`.
 
-To preload the project’s reference observation (~68 MiB), run this from the project root, then refresh the app:
-
-```bash
-.venv/bin/python scripts/download_observation.py
-```
-
-You can also upload an uncompressed FITS file (up to 256 MiB), or set `SPHEREX_FITS_PATH=/absolute/path/file.fits` on the Python process before starting it. FITS data are stored in `backend/data/` by default; `SPHEREX_DATA_DIR` overrides that path. Local environment files and cached data are excluded from Git. For a Colab backend, set `BACKEND_URL` to the full private URL printed by the notebook and restart Next.js.
-
-## Download several observations of one sky region
-
-1. Open **Downloads** from Simple or Complex.
-2. Choose **Cutout size** (3–60 arcmin). To get started without searching, click **Download sample** for two real observations of the same field. To download your own region, enter **RA and Dec in decimal degrees** under **Fixed sky region**. For the starter field, try RA `304.52129078`, Dec `39.07848168`.
-3. Select an archive collection and click **Search IRSA at this position**. Filter by detector if desired; the detector number alone does not guarantee matching wavelengths.
-4. Choose a count and click **Download N cutouts**. This takes the first matching results shown, downloading each at the same sky position and cutout size. **Add cutout** is still available for individual files.
-5. Open **Observation library** to see successful downloads. Choose up to 12 observations and build a fixed-sky view to compare them. The download limit is separate from the 12-frame comparison limit.
-
-Progress and failed files are shown in the app. **Stop after current file** preserves completed downloads. Keep the page open while the batch runs. Files go to the connected Python backend: your local cache when running locally, or the Colab runtime when using that backend.
-
-## Simple and Complex views
-
-The app starts in **Simple**: a guided layout based on the original Sky Motion Lab, with reference/current sky images, a timeline, automatic WCS registration and compatible-pair selection, difference/significance views, a detector wavelength slider, and a pixel inspector. It uses the same real scientific backend as the full workspace; there are no synthetic noise/drift controls or invented epochs.
-
-Use the **Simple / Complex** switch in the header. **Complex** retains the complete dashboard, archive search, file inspector, custom sky grids, source charts, and candidate tools. Your view preference survives refresh. Switching views retains the mounted workspace and pauses playback in the view you leave. To change the simple field, expand **Change sky position**; for additional files, use **Load FITS file** or **Find more real observations**.
-
-The Simple view auto-prepares cached observations. If only one real date exists, animation is disabled. Current-date choices are prechecked for wavelength, quality, and PSF overlap. Click **Subtract images** to run subtraction. Playback and Next/Previous use only matching dates for the chosen reference; incompatible dates stay visible but disabled. Choosing another reference automatically selects a compatible current date. If no real pair is available, the UI explains how to add coverage. Nothing is fabricated to make a control appear functional.
-
-## Native observation viewer
-
-- Loads and validates real FITS HDUs, preserving headers and each extension's independent shape.
-- Renders IMAGE, VARIANCE, FLAGS, and ZODI with native pixel dimensions, nearest-neighbor enlargement, transparent missing values, zoom, pan, and a detector grid.
-- Inspects original brightness, variance, sqrt(variance), flags and active bit indices, modeled zodiacal light, ICRS coordinates, wavelength, and bandwidth at a clicked pixel.
-- Reads the primary celestial TAN/SIP WCS and the alternate spectral `W` WCS backed by `WCS-WAVE`. Spectral SIP is explicitly disabled following IRSA's reference tutorial. Wavelength and bandwidth units are converted to µm using the file's declared WCS units.
-- Computes detector wavelength bounds from all pixels in bounded strips, rather than assuming full-mission spectral coverage.
-- Locates an entered ICRS RA/Dec within the loaded exposure; reports no coverage outside it.
-- Browses and searches every HDU's original headers, including table schemas and PSF cube dimensions. It does not misinterpret PSF planes as science frames.
-- Offers grayscale, amber, and ice display palettes; linear, asinh, and logarithmic stretches; custom limits; and a conservative all-nonzero-flags mask. PNG downloads are processed display products, not science FITS exports.
-- Includes accessible file loading, loading/error states, a field guide, responsive layouts, and keyboard pixel navigation.
-
-## Data and provenance
-
-The exact user-selected NASA/IPAC IRSA QR2 observation URL, filename, byte count, and pinned SHA-256 are in `backend/dataset.json`. The downloader verifies the checksum before installing the default. Uploaded bytes matching that checksum receive the same archive source link; other uploads are labeled as user supplied with unverified archive origin. Files are excluded from Git and remain on the local server.
-
-The observation timestamp comes from `DATE-OBS` or explicitly identified observation-time alternatives; `DATE` (HDU creation time) is never substituted. Header release/version values are reported only when available. QR2 is taken from the verified reference archive path, not inferred from arbitrary filenames.
-
-## Science workspace: Phases 2–5
-
-All sidebar science sections are functional. Start with **Downloads** or select cached files in any science workspace. Enter ICRS coordinates, select up to 12 observations, and choose **Build fixed-sky view**. The region remains fixed when changing dates or wavelengths. A library row can open its native detector view. Uploading another file adds it to the library.
-
-- **Wavelengths:** a 0.75–5 µm detector slider shows native pixels whose measured central wavelengths fall within the requested interval. Missing coverage is transparent. The alternate calibration-map mode displays the actual wavelength lookup. For a fixed-sky wavelength view, enable the interval filter and rebuild. The combined view uses inverse-variance weighting of compatible registered measurements, with no filling of missing sky coverage.
-- **Timeline:** actual FITS observation timestamps, date selection, Previous/Next, Play/Pause, speed controls, shared brightness limits, and aligned-pair blinking. Frames are WCS-reprojected onto an explicit ICRS TAN grid. Playback uses distinct covered dates; fewer than two dates disables animation. A frame without usable coverage stays transparent. Clicking a source inspects the sky-grid pixel and measures the same sky position across selected observations.
-- **Source measurements:** Plotly wavelength and time-series charts show background-subtracted aperture fluxes with measurement error bars and measured bandwidths. Photometry uses a two-native-pixel-radius aperture and a three-to-five-pixel background annulus. Invalid apertures and overly broad wavelength mixtures are excluded and reported.
-- **Difference:** selects a reference and a new observation, checks units, flags, wavelength centers and bandwidths, matches approximate Gaussian PSFs using the median PSF_FWHM headers, and subtracts new − reference. Optional ZODI subtraction removes each native foreground model before registration; median-overlap background removal adjusts the remaining offset independently. Registered reference/new, signed difference, approximate significance, valid-overlap mask, and before-alignment native detector images are available. Clicking a derived image reports its actual numerical values.
-- **Investigate:** separates positive/negative connected residual groups above a selected significance threshold and minimum pixel area. Candidate positions, peak significance, and edge status are displayed. Opposite-sign groups can form ambiguous two-epoch motion hypotheses with sky displacement and apparent velocity. A chosen hypothesis is tested for nearby significant residuals at the other selected epochs; unavailable or unmatched epochs remain explicit. SIMBAD links support manual catalog checks, not automatic identifications.
-- **Archive:** uses the documented official SIA2 endpoint, DR1/QR3 wide/deep collections, and official center/size cutout parameters. Returns actual metadata, caches downloaded files, preserves source URLs/releases, and exposes errors without substitutes. Search results are capped at 100 by the UI (API permits 200); the response identifies a reached cap. Newly ingested data can lag in SIA2. Individual archive downloads may return HTTP 503; retry the requested cutout or choose another real exposure.
-
-The backend recommends the selected pair with the largest compatible sky overlap. It does not assert that all observations in the library are scientifically interchangeable. Two files from the same OBSID/detector/time cannot be included together; this prevents double-counting full frames and their cutouts.
-
-## Scientific assumptions and limits
-
-- WCS-WAVE is a visualization approximation; precision work needs separate CWAVE/CBAND products. A single exposure does not contain a full source spectrum at each sky location.
-- Native images retain detector orientation with FITS Y upwards. Registered images are north up, east left. Native and sky-grid pixel coordinates are distinct. Small cutouts stay visibly pixelated.
-- Registered processing requires co-shaped IMAGE, VARIANCE, and FLAGS with declared brightness/squared-brightness units, plus valid celestial and spectral WCS. Missing requirements are rejected, not guessed.
-- Registration uses bilinear `reproject_interp`. Measurement variance is propagated using the squared four-neighbor interpolation weights. Quality masks require valid contributing pixels. Resampling introduces covariance between neighboring output pixels. Gaussian smoothing propagates variance using the squared kernel but does not model the existing resampling covariance; significance is therefore approximate.
-- Quality screening excludes nonzero bits except documented informational FULLSAMPLE (12) and SOURCE (21). This differs from the native viewer's optional conservative **all nonzero bits** display mask. Unknown bits are rejected. Header bit definitions remain inspectable.
-- Comparison permits band-center offsets up to 25% of the narrower bandwidth and bandwidth differences up to 20% of the wider bandwidth, per sky pixel. This is an explicit approximation to spectral compatibility, not proof of identical full filter response. Gaussian PSF matching uses median header FWHM in arcseconds, not full spatially varying PSF kernels. Missing PSF_FWHM disables comparison.
-- Optional median background fitting can suppress broad real variability; its estimation error and systematic calibration/foreground/PSF errors are absent from the displayed significance. No ZODI subtraction or correction is applied automatically.
-- Inverse-variance wavelength mosaics are visualization products and do not homogenize PSFs or remove epoch variability. Samples are checked against a per-pixel spectral anchor before combination; different valid wavelengths are never silently mixed across a broad interval.
-- Aperture fluxes use projection-plane pixel area as a local solid-angle approximation. Median-background uncertainty is approximated under independent Gaussian pixel noise. No PSF aperture correction, correlated-noise correction, or deblending is performed. Charts explicitly report unavailable samples; differing epochs/wavelengths can confound variability and spectral trends. These measurements are exploratory.
-- Candidate significance is per pixel; adjacent groups contain correlated noise. Reported peak sigma is not a calibrated source significance or false-alarm probability. No global multiple-testing correction is applied. Gaussian PSF mismatch, calibration changes, variable objects, foregrounds, cosmic rays, and artifacts can generate residuals. Catalog links are manual searches; nothing is claimed to be a new object or Planet X.
-- Motion hypotheses associate negative and positive residual lobes within a selected angular radius and are intrinsically ambiguous. Linear-path checks find the nearest positive residual within three sky-grid pixels; all comparisons share a reference and are correlated. They are not orbital fits, independent confirmations, or guaranteed source associations.
-- Original observation times are preserved. DATE (file creation) is never substituted for DATE-OBS. Unknown releases/units remain explicit. Every on-screen measurement originates in a real uploaded/downloaded FITS file or a labeled processing result.
-- This remains a trusted local application bound to loopback, without public-server authentication or user isolation. Disk files persist locally. Up to four registered sessions and four analyses are kept in memory; expired sessions must be rebuilt. Native observation arrays use a two-item memory cache; the grid is bounded to 256 × 256 and a workspace to 12 files.
-
-## Verification
+Check the backend and frontend proxy separately if the app cannot connect:
 
 ```bash
-npm run typecheck
-npm run build
-npm run test:science
+curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:3001/api/science/health
 ```
 
-Tests use explicitly synthetic FITS files only as fixtures, never application data. They verify known-answer celestial WCS, wavelength/bandwidth `-TAB` mapping, spectral SIP removal, timestamp preservation, pixel and FITS coordinate conventions, original values, uncertainty, invalid variance, flag bits, transparent masking, image orientation, independent extension dimensions, absent calibration, file validation, caching, and API round trips.
+| Setting | Where to set it | Purpose |
+| --- | --- | --- |
+| `BACKEND_URL` | Next.js environment or `.env.local` | Python API URL; defaults to `http://127.0.0.1:8000` |
+| `SPHEREX_DATA_DIR` | Python process environment | FITS cache directory; defaults to `backend/data/` |
+| `SPHEREX_FITS_PATH` | Python process environment | Optional path to an existing FITS file |
 
-Real-reference validation findings and the multi-observation validation are recorded in `docs/observation-report.md`. Native WCS transforms are serialized to avoid a reproduced Astropy 8.0.2 shared-WCS thread-safety crash; an isolated concurrent real-data regression test checks this. Browser verification uses native Python Playwright; see `scripts/test_browser.py` for the native viewer and `scripts/test_workspace_browser.py` for the real multi-observation workflow. Set `SPHEREX_APP_URL` if Next.js is running on a port other than 3000. The multi-observation check defaults to port 3001 and requires the real cutouts cached during development, or another library containing a compatible real pair. Install the optional test dependency with `.venv/bin/python -m pip install playwright`, then `.venv/bin/python -m playwright install chromium`. Keep both servers running before invoking it.
+The local app binds to loopback. Environment files and cached FITS data are excluded from Git. To preload the original verified QR2 reference (~68 MiB), run `.venv/bin/python scripts/download_observation.py` and refresh. This gives you **one observation**; use the two-file sample for a comparison. You can also upload an uncompressed FITS file up to 256 MiB.
 
-## Google Colab
+## First comparison: download the sample and find a change
 
-For Nova Velorum, run the [standalone notebook](docs/spherex-colab-standalone.ipynb) or paste the [standalone script](docs/spherex-colab-standalone.py) into a Colab cell. It embeds the backend, prints the private API URL, then downloads and registers the observations. No separate ZIP is needed. Regenerate both files after backend edits with `python3 scripts/generate_standalone_colab.py`.
+1. In **Simple → Downloads**, choose **Native resolution · cutout**, pick **12 arcmin**, and click **Download sample**. This requests two real DR1 observations of the same field (RA `304.52129078°`, Dec `+39.07848168°`).
+2. Click **Open in Motion Explorer**. The app searches the library for compatible observations and prepares a reference (A) and a current observation (B).
+3. Use the **Current observation** slider to change B, or choose another reference under **Dates & playback**. Open **Side by side** or **Before / after** to inspect the images. Pinch, Ctrl + scroll, or use the zoom controls to zoom the aligned images together. **Original FITS coverage** shows each file's native field with independent zoom; a cutout can show less sky than a full exposure.
+4. Click **Subtract images**. Under **What changed?**, choose **Difference** for brightness changes or **Significance** for change relative to estimated noise. Blue marks where B is fainter; red marks where B is brighter. Checkerboard pixels were excluded. The warning lists how much was excluded and why.
+5. Select a numbered circle or click the corresponding button under **Look up an object**. The panel opens **Nearby known objects** automatically. The pixel inspector shows measurements at the residual peak and patches from both original observations when available.
 
-1. Upload [the notebook](docs/spherex-colab.ipynb) to Colab and run its cell. When prompted, upload [the backend bundle](docs/spherex-colab-backend.zip). The [plain Python cell](scripts/colab_backend_cell.py) is also available.
-2. The cell downloads three full official IRSA exposures, previews a measured difference, and prints a temporary `BACKEND_URL` including a private path. Copy the **whole** line to `.env.local` at the project root.
-3. Restart the local frontend with `npm run dev -- --port 3001`. Next.js uses the remote API while the Colab runtime and tunnel remain connected. Remove the line and restart to return to the local backend.
+### Possible motion
 
-If running the script with `!python`, upload the ZIP through the Colab Files sidebar to `/content/spherex-colab-backend.zip` first. The upload picker only works when the code runs directly in a notebook cell. Shell mode saves the preview to `/content/spherex-colab/difference.png`.
+After subtraction, select **Possible motion** under **What changed?**. The app uses the same candidate response as **Brightness changes**, so switching views does not recompute the subtraction. It shows up to three blue-to-red pairs, ordered by the strength of their weaker mark. Selecting a pair draws one arrow from the reference position to the current position and shows the angular separation. The view skips edge fragments and offsets smaller than the matched image's sharpness. If a marker has another eligible partner, the app flags that ambiguity.
 
-The printed URL grants access to the notebook API; keep it private. This is a temporary interactive notebook workflow, not persistent hosting. See the [Colab FAQ](https://research.google.com/colaboratory/faq.html) and [Quick Tunnel limits](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/).
+An arrow shows a **possible** path, not an orbit or a verified moving object. A changing source, a nearby source, or a subtraction artifact can also leave blue and red marks. **Complex → Investigate → Test across dates** checks a selected linear path for nearby residuals in other workspace observations; those checks share a reference image.
 
-The preview uses a 160 × 160 grid at the same angular scale as the app. Full exposures cover more sky than the cutouts, but do not resolve finer detail. The starter field demonstrates measured residuals, not a verified astrophysical change. For a documented brightness change, see [NASA’s 3I/ATLAS observations](https://science.nasa.gov/photojournal/nasas-spherex-examines-comet-3i-atlass-coma/) and [the IRSA observation table](https://irsa.ipac.caltech.edu/data/SPHEREx/docs/comet3iatlas/index.html).
+### What object is nearby?
 
-## Sources
+The app sends the marker's sky coordinates to [CDS SIMBAD](https://simbad.harvard.edu/simbad/) and searches within **15 arcseconds**. It lists catalog names, object types, any available spectral type, and angular distance, closest first. **No SIMBAD objects found** means the lookup succeeded but returned no catalog entry within the radius. **SIMBAD lookup unavailable** means the lookup could not run.
 
-- [Official SPHEREx data product descriptions](https://caltech-ipac.github.io/spherex-archive-documentation/spherex-data-products/)
-- [Official IRSA SPHEREx tutorial and spectral WCS recipe](https://github.com/Caltech-IPAC/irsa-tutorials/blob/main/tutorials/spherex/spherex_intro.md)
-- [Astropy WCS API](https://docs.astropy.org/en/stable/api/astropy.wcs.WCS.html)
-- [SPHEREx archive access documentation](https://caltech-ipac.github.io/spherex-archive-documentation/spherex-data-access/)
+A nearby star is a lead. To establish that it caused a brightness change, you would need to compare measurements at the star's own position in the two original images at compatible wavelengths. The current lookup does not perform that attribution.
 
-## Bulk download (200 native cutouts)
+## Spectral Fingerprint
 
-The resumable batch downloader fetches official IRSA DR1/QR3 observations around the original field (ICRS RA 304.52129078°, Dec +39.07848168°):
+A spectrum shows how bright a source is at different infrared wavelengths. Use it to explore what an object resembles.
+
+- **Simple:** click a change marker, then **View spectral fingerprint** under the inspector.
+- **Complex → Investigate:** select a residual or choose **View spectrum** on a tentative motion pair.
+- **Complex → Timeline:** click a source in the registered image to measure a fixed sky position without first running subtraction.
+
+Choose **Cached observation library** or **Current workspace only**, and a date window for a fixed source. Use **DR1 or QR3** files covering the position in several detector bands. A single exposure measures one band at that position. The app evaluates up to 120 eligible cached files per request and reports when it reaches the cap. Moving candidates are measured along the interpolated path between the chosen epochs, without extrapolation or a stellar classification.
+
+The backend uses the native detector [effective PSF](https://caltech-ipac.github.io/irsa-tutorials/spherex-psf/), IMAGE, VARIANCE, FLAGS, and the selected ZODI correction to fit a point source and local background at the sky position. Wavelength and bandwidth come from FITS WCS-WAVE. Each usable exposure contributes one flux measurement in mJy. Vertical bars show **1σ flux uncertainty**; horizontal bars show **filter bandwidth**. Open **Measurement details and exclusions** for the source file, date, fit score, flags, and rejected samples.
+
+When enough bands pass the fit checks, the app compares the measured shape with observed G2 V, M6 V, and L5 spectra from the [NASA IRTF SpeX library](https://irsa.ipac.caltech.edu/data/IRTF_Extra/SpectralLibrary/speclib.html). The backend fetches and caches the reference FITS files, converts them to compatible flux units, averages their flux over the shared passbands, and fits one brightness scale per template. Matching needs five non-overlapping bands spanning at least 0.4 µm within 24 hours, with at least three at signal-to-noise of 3 or higher. Poor or ambiguous matches show **Insufficient data**, even when the plot contains many measured points. Try an isolated source if the point-source fits fail, or download other bands close in time if wavelength coverage is the problem.
+
+## Download more observations
+
+1. Open **Simple → Downloads**. Choose **Native resolution · cutout** for a small region, or **Native resolution · full detector** for the entire 2,040 × 2,040 detector image. Both keep the same native sharpness. A full frame typically uses about 70 MB; calibration extensions also contribute to cutout size.
+2. For a cutout, choose **3, 6, 12, 30, or 60 arcmin**. An arcminute is 1/60 of a degree; this setting controls how much sky the cutout covers. At 12 arcmin a typical cutout is about 117 × 117 native pixels, unless clipped at a detector edge.
+3. Open **Download a different sky region**, enter RA/Dec in decimal degrees, and select **2–500 observations**. Click **Download region**. The archive may have fewer matching files than requested. **Complex → Downloads** also offers explicit collection and detector filters.
+4. Follow current-file bytes, total size when reported by IRSA, files processed, and estimated batch size. **Pause** finishes the current file before stopping; **Resume** continues with the next file; **Cancel** stops the batch and preserves completed files. Keep the tab open while the batch runs.
+5. Check **Save destination** before starting. Files go to the connected backend: the local PC or the Colab runtime. They become available in the app's observation library; they are not automatically saved to your browser's Downloads folder.
+
+If IRSA reports **503**, retry later, reduce the batch size, or choose a different real exposure. Failed downloads are reported and are never replaced by simulated data. The download count is separate from the 12-file workspace limit.
+
+For a resumable command-line batch of 200 native cutouts around the sample field:
 
 ```bash
 .venv/bin/python scripts/download_bulk_observations.py --count 200 --size-deg .2 --workers 8
 ```
 
-A 0.2-degree cutout is approximately 117 × 117 native SPHEREx pixels; edge cutouts can be rectangular. Measurements are not JPEG-compressed, resampled or synthetically enhanced. All available detector-4 exposures are prioritized; the remaining selections spread other wavelength bands through the actual observation dates. These are 200 files, not a claim of 200 matching spectral observations or 200 distinct epochs.
+Rerunning retries unavailable files and reuses the completed ones. The default batch records archive URLs, SHA-256 IDs, timestamps, sizes, dimensions, and wavelength information in `backend/data/bulk-200/manifest.json`. The file count is not a count of distinct dates or wavelength-compatible images.
 
-Progress, source URLs, SHA-256 file IDs, dimensions, sizes, timestamps, release, and measured central wavelengths/bandwidths are recorded in `backend/data/bulk-200/manifest.json`. Canonical FITS files and metadata are installed in the existing `backend/data` library. Hard links avoid duplicating the downloaded FITS storage on the same filesystem. Re-running resumes the batch and retries unavailable files; an unsuccessful download is not replaced with generated data.
+## Complex workspace
 
-The science workspace still processes up to 12 selected files per session. The full library remains available for selection. Simple view prioritizes the active detector and nearby measured central wavelengths when choosing a subset from a large library. Comparisons retain their pixel-level compatibility checks.
+Select files in **Observation library**, enter a fixed sky position, and choose **Build fixed-sky view**. One workspace holds up to 12 files. Duplicate copies of the same exposure and detector are rejected.
 
-As of the official IRSA documentation dated November 12, 2026, search uses DR1/QR3. Existing QR2 files remain readable; QR2 direct downloads remain available through February 2027, while QR2 is no longer searchable through SIA2.
+| View | What it shows |
+| --- | --- |
+| **Explore / Data Inspector** | Native IMAGE, VARIANCE, FLAGS, and ZODI pixels; FITS headers and extension schemas; WCS coordinates; brightness, noise, wavelength, and bandwidth. Display stretches and PNG exports are for viewing. |
+| **Wavelengths** | Measured detector wavelengths, a calibration map, and a registered inverse-variance weighted image when the wavelength filter is enabled. |
+| **Timeline** | Actual observation dates, aligned playback, pixel inspection, aperture flux charts, and fixed-position Spectral Fingerprint. |
+| **Difference imaging** | Registered or native inputs, signed B−A image, approximate significance, and the valid-overlap mask. |
+| **Investigate** | Residual groups, configurable threshold and size, possible motion pairs, checks across epochs, catalog lookup, and spectra. |
+| **Downloads** | IRSA search and file import, with archive provenance and release labels. |
 
-### Automatic comparison
+## How the measurements work
 
-Simple view now runs **Find & compare automatically** on load. The backend searches the local library beyond the 12-frame display limit, rejects repeated exposures and equal/missing epochs, projects observations onto a shared ICRS WCS grid, and checks wavelength centers and bandwidths per overlapping pixel. Candidate pairs must retain usable pixels after quality masking and Gaussian PSF matching. A successful automatic session displays up to 12 observations, prioritizes wavelengths near the selected sky position, and chooses a reference with the most compatible dates (earliest on ties), then the partner with the largest usable overlap for that reference.
+1. **Pick two compatible dates.** Simple automatically prepares a pair from the library. It checks for distinct observation times and usable overlap before offering a date. Subtraction starts only when you click **Subtract images**.
+2. **Align and screen the pixels.** Celestial WCS maps the images to the same ICRS sky grid. The app checks pixel flags, variance, and spectral overlap. Band centers may differ by at most 25% of the narrower bandwidth, and bandwidths by at most 20% of the wider bandwidth.
+3. **Account for foreground, background, and sharpness.** The default in Simple and Complex subtracts each file's ZODI model before registration. Optional median-overlap background correction removes the remaining offset. Gaussian PSF matching smooths to the wider header PSF_FWHM. Neither input FITS file is modified.
+4. **Subtract and group residuals.** The app computes B−A in MJy/sr and an approximate significance image using propagated variance. Simple starts at 7σ and requires at least three connected pixels; it shows the five strongest regions by default.
 
-Brightness is converted to the common calibrated MJy/sr unit. The app enables ZODI subtraction by default in Simple and Complex: each observation uses its own IMAGE − ZODI before WCS registration. The optional background correction then removes the remaining median B−A offset over compatible pixels. PSF matching smooths to the larger FITS PSF_FWHM. The displayed A/B images are the matched arrays actually used in the subtraction. No arbitrary gain is fitted to already calibrated measurements.
+Resampling correlates nearby pixels. Reported significance is an estimate, not the probability that a source changed. The calculation does not capture all ZODI, calibration, or PSF errors. WCS-WAVE is approximate; [IRSA recommends CWAVE and CBAND for precision work](https://caltech-ipac.github.io/spherex-archive-documentation/spherex-data-products/#additional-product-spectral-wcs). The workspace's legacy aperture charts and the Spectral Fingerprint's native PSF fits use different measurement methods.
 
-Numbered red/blue markers and the residual list highlight connected positive/negative regions with at least three pixels above the selected approximate significance threshold (default 7σ in Simple). Simple shows the five strongest matches unless Show all matches is enabled. Clicking a marker or list entry reads its measured position and residual. The five-step status panel shows completion, overlap, PSF width, and background correction. These are unverified residuals: resampling correlations, calibration errors, and spatial PSF mismatch limit significance.
+The pinned reference file's URL, expected size, and checksum are recorded in [backend/dataset.json](backend/dataset.json). Archive imports retain source URLs; other uploads are labeled user supplied unless their bytes match the verified reference. Observation dates come from observing-time FITS keywords, never the file creation date.
 
-API: `POST /workspace/auto-session` accepts `{ra, dec, size?, scale?, preferred_id?}` and returns a regular workspace session plus search counts. A missing compatible pair returns an explicit 422 response; incompatible bands are never forced into a subtraction. Reprojection uses surface-brightness units as described in the [Reproject documentation](https://reproject.readthedocs.io/en/stable/celestial.html).
+## Use a Google Colab backend
 
-### Zodiacal foreground correction
+1. Open the [standalone Colab notebook](docs/spherex-colab-standalone.ipynb), or paste the [standalone Python script](docs/spherex-colab-standalone.py) directly into a Colab cell. It embeds the backend, starts the API, prints a private tunnel URL, and downloads and registers real Nova Velorum FITS observations. No separate ZIP upload is needed.
+2. Copy the full `BACKEND_URL=...` line into the project's `.env.local`. Stop and restart Next.js with `npm run dev -- --port 3001` **without** the inline local URL override.
+3. Keep the Colab runtime active. Refresh the app, check **Save destination**, and look in **Complex → Observation library** for the registered files. Downloads and the cache now live in the Colab runtime.
+4. To return to the local cache, set `BACKEND_URL=http://127.0.0.1:8000` and restart Next.js with the local Python service running.
 
-**Subtract zodiacal light (ZODI)** is on by default in both comparison views. Simple rebuilds and recomputes when toggled; Complex invalidates the previous session and requires **Build fixed-sky view** again. The correction also applies to registered frames, coadds, source-aperture measurements, candidate detection, and tracking within that session. Native detector/wavelength inspection continues to show the original measurements.
+Keep the tunnel URL private. A reset Colab runtime can lose its files and change its URL. After backend edits, regenerate the standalone files with `python3 scripts/generate_standalone_colab.py`. The older [ZIP-based notebook](docs/spherex-colab.ipynb) and [backend ZIP](docs/spherex-colab-backend.zip) remain available.
 
-Each ZODI plane must match IMAGE dimensions and declare compatible brightness units. Nonfinite model pixels are excluded from overlap. Missing/malformed models cause a clear error or exclusion from automatic pair selection; there is no silent uncorrected fallback. Both corrected and uncorrected session caches have distinct IDs. Original arrays and FITS files are untouched.
+## Troubleshooting
 
-The API enables this with `subtract_zodi: true` in `/workspace/sessions` or `/workspace/auto-session`; its default remains false for existing API clients. The session grid records `subtract_zodi`, and analysis metadata records `zodi_subtracted`. Measurement variance is propagated as before; it does **not** include uncertainty or covariance in the zodiacal model. See the [official SPHEREx product description](https://caltech-ipac.github.io/spherex-archive-documentation/spherex-data-products/) for the supplied ZODI layer.
+| Symptom | What to check |
+| --- | --- |
+| Science service unavailable | Check both health URLs above and restart Next.js after changing `BACKEND_URL`. |
+| No compatible overlap | Add observations of the same position and similar bands, or select another date. Having the same detector number is not enough. |
+| Images show different amounts of sky | Original FITS coverage can differ between a cutout and a full frame. Use the aligned comparison for a shared sky scale. |
+| Checkerboard gaps | Read the exclusion breakdown; flagged, out-of-frame, or wavelength-incompatible pixels are not used. |
+| No numbered changes or possible motion | Try another compatible date. A lower threshold can show weaker residuals and more noise. |
+| Spectrum has points but says **Insufficient data** | Check fit scores, signal-to-noise, distinct wavelength coverage, and the time window in **Measurement details and exclusions**. |
+| Workspace or analysis expired | Rebuild the view or run subtraction again. The backend keeps a bounded in-memory cache; disk files remain in the library. |
 
-### Simplified comparison interface
+## Development and sources
 
-Simple view offers both the original side-by-side images and a before/after reveal image. Drag the center divider or use the range slider underneath; both support keyboard control. The signed difference remains below it. Dates/playback, processing evidence, highlighted-change lists, and More options are collapsed by default. ZODI subtraction stays enabled, and the pixel inspector appears after selecting a pixel.
+```bash
+npm run typecheck
+npm run test:science
+npm run build
+```
 
-The **Current observation** slider changes only B through compatible, timestamp-ordered observations; A stays fixed. The slider is disabled when only one compatible current date exists. **Mark changes on images** overlays the same measured residual coordinates on either layout. The difference/significance panel stays visible. Markers open the difference measurement in the pixel inspector.
+FastAPI serves interactive API docs at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) while running locally. The frontend uses `/api/science/*`. Key endpoints include `/workspace/auto-session` for pair preparation, `/analysis` for subtraction, `/analysis/{id}/candidates` for residuals and motion pairs, `/catalog/nearby` for SIMBAD, and `/analysis/{id}/fingerprint` for candidate spectra.
+
+Science tests use controlled FITS fixtures; the app uses real observations. See [the observation report](docs/observation-report.md) and [the browser workflow check](scripts/test_workspace_browser.py) for real-data validation.
+
+- [NASA/IPAC IRSA SPHEREx data products](https://caltech-ipac.github.io/spherex-archive-documentation/spherex-data-products/)
+- [IRSA archive search and access](https://caltech-ipac.github.io/spherex-archive-documentation/spherex-data-access/)
+- [IRSA effective PSF tutorial](https://caltech-ipac.github.io/irsa-tutorials/spherex-psf/)
+- [CDS SIMBAD astronomical database](https://simbad.harvard.edu/simbad/)
+- [NASA IRTF SpeX spectral library](https://irsa.ipac.caltech.edu/data/IRTF_Extra/SpectralLibrary/speclib.html)
