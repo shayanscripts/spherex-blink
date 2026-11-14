@@ -1,0 +1,10 @@
+fastapi==0.162.4
+uvicorn[standard]==0.54.0
+python-multipart==0.0.33
+astropy==8.0.2
+numpy==2.5.4
+Pillow==13.0.0
+pytest==9.2.0
+httpx==0.28.1
+reproject==0.21.0
+scipy==1.18.1

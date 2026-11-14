@@ -1,0 +1,42 @@
+[
+  {
+    "id": "0cd1623b9b8caaec910939bc1f591877d46cb92c6edfb45254bc06709f28ef5d",
+    "timestamp": "2025-04-28T16:20:52.353",
+    "url": "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-240/4/level2_2025W18_1B_0023_4D4_spx_l2b-v20-2025-240.fits"
+  },
+  {
+    "id": "5aa591519b4ca76d9799131714c487fa8e9de8685443bb66f6a29fdeb711af2d",
+    "timestamp": "2025-05-22T17:29:53.475",
+    "url": "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W21_2C/l2b-v20-2025-250/4/level2_2025W21_2C_0038_3D4_spx_l2b-v20-2025-250.fits"
+  },
+  {
+    "id": "ecf4b6278fe24019dadaec7d1a7d5e83aa073ec08a31e87d460033767f2d6bb1",
+    "timestamp": "2025-10-27T01:27:02.543",
+    "url": "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W44_1A/l2b-v20-2025-306/4/level2_2025W44_1A_0016_1D4_spx_l2b-v20-2025-306.fits"
+  },
+  {
+    "id": "77ac8f74515662d1b10533b104652b26f696f7e645118994310bab71332207a5",
+    "timestamp": "2025-10-27T01:33:29.335",
+    "url": "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W44_1A/l2b-v20-2025-306/4/level2_2025W44_1A_0016_4D4_spx_l2b-v20-2025-306.fits"
+  },
+  {
+    "id": "6965b43c426def99a20d9e0e26b1d8616f71bd956a639abd009fd2047c599f3f",
+    "timestamp": "2025-10-28T01:58:12.580",
+    "url": "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W44_1A/l2b-v20-2025-306/4/level2_2025W44_1A_0236_2D4_spx_l2b-v20-2025-306.fits"
+  },
+  {
+    "id": "6f371ad7b28c13fb89f2ec42117f75aff6047f5e570f229d419e413500e281dc",
+    "timestamp": "2025-10-29T07:13:13.772",
+    "url": "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W44_1A/l2b-v20-2025-306/4/level2_2025W44_1A_0516_1D4_spx_l2b-v20-2025-306.fits"
+  },
+  {
+    "id": "70f92c040d2101872625e500194ffaeca39ba2abea2187ca0351528e5f5451da",
+    "timestamp": "2026-04-26T19:21:43.162",
+    "url": "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2026W17_2A/l2b-v24-2026-118/4/level2_2026W17_2A_0756_1D4_spx_l2b-v24-2026-118.fits"
+  },
+  {
+    "id": "8a7da4693b4189a473324c5e07c3d3a7c0f0494a4d1c7d8a4281910a163e6a9a",
+    "timestamp": "2026-05-27T11:51:30.272",
+    "url": "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2026W22_1A/l2b-v25-2026-150/4/level2_2026W22_1A_0393_4D4_spx_l2b-v25-2026-150.fits"
+  }
+]

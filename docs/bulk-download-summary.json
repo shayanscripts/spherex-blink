@@ -1,0 +1,22 @@
+{
+  "count": 200,
+  "bytes": 835839360,
+  "mib": 797.1,
+  "detectors": {
+    "1": 27,
+    "2": 25,
+    "3": 29,
+    "4": 67,
+    "5": 21,
+    "6": 31
+  },
+  "releases": {
+    "DR1": 157,
+    "QR3": 43
+  },
+  "earliest": "2025-04-27T14:11:34.617",
+  "latest": "2026-06-23T13:50:22.171",
+  "library_count": 209,
+  "sha256_verified": 200,
+  "manifest": "/home/M-Arham07/Documents/ChatGPT/realdata/backend/data/bulk-200/manifest.json"
+}
