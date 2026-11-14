@@ -1,7 +1,11 @@
 """Verified IRSA SIA2 discovery and allowlisted official cutout downloads."""
 import hashlib
 import io
+from collections.abc import Callable
 from pathlib import Path
+from threading import Event
+from tempfile import NamedTemporaryFile
+import time
 from urllib.parse import urlsplit
 
 import httpx
@@ -47,7 +51,21 @@ def search(ra: float, dec: float, radius: float, collection: str, limit: int) ->
                 note='Archive band bounds describe the exposure; local wavelength coverage is checked after loading.')
 
 
-def download(url: str, directory: Path, ra: float | None, dec: float | None, size: float) -> tuple[Path,str]:
+class ArchiveUnavailable(RuntimeError):
+    pass
+
+
+class DownloadCancelled(RuntimeError):
+    pass
+
+
+def download(url: str, directory: Path, ra: float | None, dec: float | None, size: float,
+             *, progress: Callable[[int, int | None], None] | None = None,
+             cancel: Event | None = None) -> tuple[Path,str]:
+    def check_cancelled():
+        if cancel is not None and cancel.is_set():
+            raise DownloadCancelled()
+    check_cancelled()
     validate_url(url)
     params = dict(center=f'{ra},{dec}', size=str(size)) if ra is not None and dec is not None else {}
     request_url = str(httpx.URL(url, params=params))
@@ -55,16 +73,48 @@ def download(url: str, directory: Path, ra: float | None, dec: float | None, siz
     directory.mkdir(parents=True, exist_ok=True)
     target = directory / f'archive-{key}.fits'
     if target.exists(): return target, request_url
-    partial = directory / f'archive-{key}.part'
-    try:
-        with httpx.Client(timeout=120) as client, client.stream('GET', request_url) as response:
-            response.raise_for_status()
-            with partial.open('wb') as stream:
-                for chunk in response.iter_bytes(1024*1024):
-                    stream.write(chunk)
-                    if stream.tell() > 256*1024*1024: raise ValueError('Archive file exceeds 256 MiB.')
-        # Admission and FITS validation are performed by register before library use.
-        partial.replace(target)
-    finally:
-        partial.unlink(missing_ok=True)
-    return target, request_url
+    transient = {429, 500, 502, 503, 504}
+    deadline = time.monotonic() + 100
+    with httpx.Client() as client:
+        for attempt in range(3):
+            partial = None
+            try:
+                check_cancelled()
+                if progress:progress(0,None)
+                timeout = min(30., max(1., deadline - time.monotonic()))
+                with client.stream('GET', request_url, timeout=timeout) as response:
+                    response.raise_for_status()
+                    length=response.headers.get('Content-Length','')
+                    total=int(length) if length.isdecimal() and len(length)<16 and response.headers.get('Content-Encoding','identity')=='identity' else None
+                    if progress:progress(0,total)
+                    with NamedTemporaryFile(dir=directory, prefix=f'archive-{key}-', suffix='.part', delete=False) as stream:
+                        partial = Path(stream.name)
+                        for chunk in response.iter_bytes(64*1024):
+                            check_cancelled()
+                            if time.monotonic() > deadline:
+                                raise httpx.ReadTimeout('FITS download timed out.')
+                            stream.write(chunk)
+                            if progress:progress(stream.tell(),total)
+                            if stream.tell() > 256*1024*1024:
+                                raise ValueError('Archive file exceeds 256 MiB.')
+                # Admission and FITS validation are performed by register before library use.
+                check_cancelled()
+                partial.replace(target)
+                return target, request_url
+            except (httpx.HTTPStatusError, httpx.TransportError) as exc:
+                retryable = not isinstance(exc, httpx.HTTPStatusError) or exc.response.status_code in transient
+                if not retryable:
+                    raise
+                delay = 2**attempt
+                if isinstance(exc, httpx.HTTPStatusError):
+                    retry_after = exc.response.headers.get('Retry-After', '')
+                    if retry_after.isdecimal() and len(retry_after) < 10:
+                        delay = max(delay, int(retry_after))
+                if attempt == 2 or time.monotonic()+delay+1 >= deadline:
+                    status = f' (HTTP {exc.response.status_code})' if isinstance(exc, httpx.HTTPStatusError) else ''
+                    raise ArchiveUnavailable(f'IRSA temporarily could not serve this FITS file{status}. Try again in a few minutes.') from exc
+                if cancel is None:time.sleep(delay)
+                elif cancel.wait(delay):check_cancelled()
+            finally:
+                if partial is not None:
+                    partial.unlink(missing_ok=True)

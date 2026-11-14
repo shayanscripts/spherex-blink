@@ -81,7 +81,7 @@ def require_layer(obs: Observation, layer: str):
 
 @app.get("/health")
 def health():
-    return dict(status="ok", phase=5)
+    return dict(status="ok", phase=5, full_frame_downloads=True)
 
 
 @app.get("/observations/default")

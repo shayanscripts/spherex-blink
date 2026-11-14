@@ -3,15 +3,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { ArrowLeft, ArrowRight, Check, Download, ExternalLink, Info, LoaderCircle, Pause, Play, RefreshCw, Search, Upload, Waves } from 'lucide-react';
 import { request } from '@/lib/api';
+import { SAMPLE_CENTER, SAMPLE_FILES } from '@/lib/downloads';
 import { number, type Analysis, type CandidateResult, type Motion, type Observation, type SkySession, type WorkspaceView } from '@/lib/types';
 const ScienceChart=dynamic(()=>import('./science-chart'),{ssr:false,loading:()=> <p className="lab-note">Loading graph…</p>});
 
 type ArchiveRow={url:string;obs_id:string;collection:string;timestamp:string|null;min_um:number|null;max_um:number|null;detector:string};
-const SAMPLE_CENTER={ra:304.52129078,dec:39.07848168};
-const SAMPLE_FILES=[
-  'https://irsa.ipac.caltech.edu/ibe/data/spherex/dr1/level2/2025W18_1B/l2b-v27-2026-196/4/level2_2025W18_1B_0023_2D4_spx_l2b-v27-2026-196.fits',
-  'https://irsa.ipac.caltech.edu/ibe/data/spherex/dr1/level2/2025W18_2B/l2b-v27-2026-197/4/level2_2025W18_2B_0097_3D4_spx_l2b-v27-2026-197.fits',
-];
 type Sample={id:string;timestamp:string;wavelength_um:number;bandwidth_um:number;flux_mjy:number;uncertainty_mjy:number;snr:number|null};
 type Readout={x:number;y:number;ra_deg:number;dec_deg:number;valid:boolean;brightness?:number|null;reference?:number|null;new?:number|null;difference?:number|null;variance:number|null;significance?:number|null;wavelength_um?:number|null};
 const titles:Record<WorkspaceView,string>={wavelengths:'Follow the infrared.',timeline:'Watch the same sky, over time.',difference:'Compare the evidence.',investigate:'Investigate a possible change.',archive:'Downloads'};

@@ -1,10 +1,12 @@
 """Multi-observation workspace routes. Real files only; derived products are labeled."""
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
 from pathlib import Path
+from threading import Event
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
@@ -15,7 +17,7 @@ from astropy.coordinates import SkyCoord
 from astropy.time import Time
 from astropy.wcs.utils import proj_plane_pixel_scales
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 
 from backend import archive, processing as proc
@@ -57,7 +59,7 @@ def library():
 def search(ra: Annotated[float,Query(ge=0,lt=360)],dec: Annotated[float,Query(ge=-90,le=90)],
            radius: Annotated[float,Query(gt=0,le=1)]=.01,
            collection: Literal['spherex_dr1','spherex_dr1_deep','spherex_qr3','spherex_qr3_deep']='spherex_dr1',
-           limit: Annotated[int,Query(ge=1,le=200)]=100):
+           limit: Annotated[int,Query(ge=1,le=500)]=100):
     try:return archive.search(ra,dec,radius,collection,limit)
     except Exception as exc:raise HTTPException(502,f'IRSA search failed: {exc}. No observations were substituted.') from exc
 
@@ -67,13 +69,20 @@ class ImportRequest(BaseModel):
     ra: float=Field(ge=0,lt=360)
     dec: float=Field(ge=-90,le=90)
     size_deg: float=Field(default=.2,gt=0,le=1)
+    full_frame: bool=False
 
 
 @router.post('/archive/import')
 def import_observation(body: ImportRequest):
+    return _import_observation(body)
+
+
+def _import_observation(body: ImportRequest, *, progress=None, cancel=None):
     try:
         archive.validate_url(body.url)
-        path,request_url=archive.download(body.url,service().DATA_DIR,body.ra,body.dec,body.size_deg)
+        ra,dec=(None,None) if body.full_frame else (body.ra,body.dec)
+        path,request_url=archive.download(body.url,service().DATA_DIR,ra,dec,body.size_deg,progress=progress,cancel=cancel)
+        if cancel is not None and cancel.is_set():raise archive.DownloadCancelled()
         result=service().register(path,Path(urlsplit(body.url).path).name)
         record_path=service().DATA_DIR/f'{result["id"]}.json'
         record=json.loads(record_path.read_text())
@@ -83,8 +92,42 @@ def import_observation(body: ImportRequest):
         result=service().metadata(result['id'])
         record['metadata']=result;record_path.write_text(json.dumps(record))
         return result
+    except archive.DownloadCancelled:raise
+    except archive.ArchiveUnavailable as exc:raise HTTPException(503,str(exc)) from exc
     except ValueError as exc:raise bad_request(exc) from exc
     except Exception as exc:raise HTTPException(502,f'IRSA import failed: {exc}. No replacement data were generated.') from exc
+
+
+@router.post('/archive/import-stream')
+async def import_stream(body: ImportRequest):
+    try:archive.validate_url(body.url)
+    except ValueError as exc:raise bad_request(exc) from exc
+
+    async def events():
+        cancelled=Event()
+        latest=(0,None)
+
+        def update(received,total):
+            nonlocal latest
+            latest=(received,total)
+
+        def work():
+            try:return dict(type='complete',observation=_import_observation(body,progress=update,cancel=cancelled))
+            except archive.DownloadCancelled:return dict(type='cancelled')
+            except HTTPException as exc:return dict(type='error',message=str(exc.detail))
+
+        worker=asyncio.create_task(asyncio.to_thread(work))
+        try:
+            while not worker.done():
+                received,total=latest
+                yield json.dumps(dict(type='progress',received=received,total=total))+'\n'
+                await asyncio.sleep(.25)
+            yield json.dumps(await worker)+'\n'
+        finally:
+            cancelled.set()
+
+    return StreamingResponse(events(),media_type='application/x-ndjson',
+                             headers={'Cache-Control':'no-store, no-transform','X-Accel-Buffering':'no'})
 
 
 @router.get('/observations/{file_id}/wavelength-image')
