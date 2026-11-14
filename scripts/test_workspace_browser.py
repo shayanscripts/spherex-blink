@@ -59,7 +59,7 @@ with sync_playwright() as p:
     page.screenshot(path=str(output/'investigate-workspace.png'),full_page=True)
     page.set_viewport_size({'width':390,'height':844});page.screenshot(path=str(output/'workspace-mobile.png'),full_page=True)
     assert not page.evaluate('document.documentElement.scrollWidth>innerWidth'),'Mobile overflow'
-    page.get_by_role('button',name='Find observations',exact=True).click()
+    page.get_by_role('button',name='Downloads',exact=True).click()
     expect(page.get_by_role('button',name='Search IRSA at this position')).to_be_visible()
     assert not errors,errors
     print('Passed: real wavelength selection and coadd, registered epochs/playback, aperture charts, difference/significance, candidate groups, navigation, mobile layout; no runtime errors.')

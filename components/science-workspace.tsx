@@ -7,10 +7,15 @@ import { number, type Analysis, type CandidateResult, type Motion, type Observat
 const ScienceChart=dynamic(()=>import('./science-chart'),{ssr:false,loading:()=> <p className="lab-note">Loading graph…</p>});
 
 type ArchiveRow={url:string;obs_id:string;collection:string;timestamp:string|null;min_um:number|null;max_um:number|null;detector:string};
+const SAMPLE_CENTER={ra:304.52129078,dec:39.07848168};
+const SAMPLE_FILES=[
+  'https://irsa.ipac.caltech.edu/ibe/data/spherex/dr1/level2/2025W18_1B/l2b-v27-2026-196/4/level2_2025W18_1B_0023_2D4_spx_l2b-v27-2026-196.fits',
+  'https://irsa.ipac.caltech.edu/ibe/data/spherex/dr1/level2/2025W18_2B/l2b-v27-2026-197/4/level2_2025W18_2B_0097_3D4_spx_l2b-v27-2026-197.fits',
+];
 type Sample={id:string;timestamp:string;wavelength_um:number;bandwidth_um:number;flux_mjy:number;uncertainty_mjy:number;snr:number|null};
 type Readout={x:number;y:number;ra_deg:number;dec_deg:number;valid:boolean;brightness?:number|null;reference?:number|null;new?:number|null;difference?:number|null;variance:number|null;significance?:number|null;wavelength_um?:number|null};
-const titles:Record<WorkspaceView,string>={wavelengths:'Follow the infrared.',timeline:'Watch the same sky, over time.',difference:'Compare the evidence.',investigate:'Investigate a possible change.',archive:'Bring more of the sky into view.'};
-const subtitles:Record<WorkspaceView,string>={wavelengths:'Select actual detector wavelengths, or combine compatible measurements on a fixed sky grid.',timeline:'Real dates. One sky region. A shared brightness scale across every registered frame.',difference:'WCS registration, wavelength checks, approximate PSF matching, and propagated uncertainty.',investigate:'Inspect significant residual groups and test tentative motion hypotheses across real epochs.',archive:'Search the official IRSA archive and add small real FITS cutouts to your local library.'};
+const titles:Record<WorkspaceView,string>={wavelengths:'Follow the infrared.',timeline:'Watch the same sky, over time.',difference:'Compare the evidence.',investigate:'Investigate a possible change.',archive:'Downloads'};
+const subtitles:Record<WorkspaceView,string>={wavelengths:'Select actual detector wavelengths, or combine compatible measurements on a fixed sky grid.',timeline:'Real dates. One sky region. A shared brightness scale across every registered frame.',difference:'WCS registration, wavelength checks, approximate PSF matching, and propagated uncertainty.',investigate:'Inspect significant residual groups and test tentative motion hypotheses across real epochs.',archive:'Download a sample or search NASA/IPAC IRSA for observations of your own sky region.'};
 
 function ImageTile({src,title,subtitle,onPixel,marker}:{src:string;title:string;subtitle?:string;onPixel?:(x:number,y:number)=>void;marker?:{x:number;y:number;size:number}|null}){
   const [error,setError]=useState(false);const[loading,setLoading]=useState(true);
@@ -67,7 +72,7 @@ export default function ScienceWorkspace({active=true,view,observation,onLoad,on
   const [stopping,setStopping]=useState(false);
   const stopBatch=useRef(false);
   const regionKey=JSON.stringify([ra,dec,collection]);
-  const sizeDeg=Math.max(.05,Math.min(1,size*scale/3600*1.2));
+  const [sizeDeg,setSizeDeg]=useState(.2);
   async function searchArchive(){await perform('Searching NASA/IPAC IRSA',async()=>{
     if(!ra.trim()||!dec.trim())throw new Error('Enter RA and Dec first.');
     setRows([]);setSearchKey('');setDownloadErrors([]);
@@ -76,11 +81,26 @@ export default function ScienceWorkspace({active=true,view,observation,onLoad,on
     setRows(result.results);setSearchKey(regionKey);
     setNotice(`${result.results.length} real archive results${result.capped?' (first 200 shown)':''}. ${result.note}`);
   });}
-  async function downloadRow(row:ArchiveRow){
-    return request<Observation>('/archive/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:row.url,ra:Number(ra),dec:Number(dec),size_deg:sizeDeg})});
+  async function downloadCutout(url:string,center={ra:Number(ra),dec:Number(dec)}){
+    return request<Observation>('/archive/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,...center,size_deg:sizeDeg})});
   }
+  async function downloadSample(){await perform('Downloading two sample observations',async()=>{
+    setDownloadErrors([]);
+    const added:Observation[]=[], failures:{file:string;message:string}[]=[];
+    for(const url of SAMPLE_FILES){
+      try{added.push(await downloadCutout(url,SAMPLE_CENTER));}
+      catch(e){failures.push({file:url.split('/').pop()??'Sample',message:e instanceof Error?e.message:'Download failed.'});}
+    }
+    setDownloadErrors(failures);
+    if(added.length){
+      setRa(String(SAMPLE_CENTER.ra));setDec(String(SAMPLE_CENTER.dec));
+      setRows([]);setSearchKey('');setIds([...new Set(added.map(o=>o.id))]);invalidate();
+      setNotice(`${added.length} of 2 sample cutouts ready and selected in the observation library. ${failures.length?'See failed downloads below.':'Open Timeline or Difference imaging to compare them.'}`);
+      await refresh();
+    }else setError('Neither sample file could be downloaded. See failed downloads below.');
+  });}
   async function importRow(row:ArchiveRow){await perform('Downloading and validating FITS cutout',async()=>{
-    const result=await downloadRow(row);
+    const result=await downloadCutout(row.url);
     await refresh();setIds(old=>old.includes(result.id)?old:[...old,result.id].slice(-12));invalidate();
     setNotice(`Added ${result.filename} to the observation library.`);
   });}
@@ -95,7 +115,7 @@ export default function ScienceWorkspace({active=true,view,observation,onLoad,on
         for(const row of batch){
           if(stopBatch.current)break;
           setBusy(`Downloading ${attempted+1} of ${batch.length} · ${ready} ready · ${failures.length} failed`);
-          try{await downloadRow(row);ready++;}
+          try{await downloadCutout(row.url);ready++;}
           catch(e){failures.push({file:row.url.split('/').pop()??row.obs_id,message:e instanceof Error?e.message:'Download failed.'});}
           attempted++;
         }
@@ -120,6 +140,18 @@ export default function ScienceWorkspace({active=true,view,observation,onLoad,on
     {error&&<div className="error-banner" role="alert"><Info size={17}/>{error}<button onClick={()=>setError('')}>Dismiss</button></div>}
     {busy&&<div className="loading-banner" role="status"><LoaderCircle className="spin" size={16}/>{busy}…</div>}
     {notice&&<div className="lab-notice" role="status"><Info size={16}/><p>{notice}</p></div>}
+    {(view==='archive'||!session)&&<section className="panel archive-panel" aria-label="Download settings">
+      <div className="panel-title"><h2>Download settings</h2></div>
+      <div className="archive-controls">
+        <label>Cutout size<select aria-label="Cutout size" value={sizeDeg} disabled={!!busy} onChange={e=>setSizeDeg(Number(e.target.value))}>
+          <option value="0.05">3 arcmin (0.05°)</option><option value="0.1">6 arcmin (0.10°)</option>
+          <option value="0.2">12 arcmin (0.20°)</option><option value="0.5">30 arcmin (0.50°)</option>
+          <option value="1">60 arcmin (1.00°)</option>
+        </select></label>
+        <button className="primary-button" disabled={!!busy} onClick={()=>void downloadSample()}><Download size={15}/>Download sample</button>
+      </div>
+      <p className="lab-note">The sample adds two real SPHEREx observations of the same field to your library. No search needed. Size sets the width of every downloaded cutout; larger cutouts cover more sky at the same native resolution.</p>
+    </section>}
     <section className="panel lab-controls"><div className="panel-title"><h2>Fixed sky region</h2><span className="tag">ICRS / WCS REGISTERED</span></div><div className="lab-control-grid">
       <label>RA / degrees<input aria-label="Workspace right ascension" type="number" step="any" min="0" max="359.999999999" value={ra} onChange={e=>{setRa(e.target.value);invalidate();}}/></label>
       <label>DEC / degrees<input aria-label="Workspace declination" type="number" step="any" min="-90" max="90" value={dec} onChange={e=>{setDec(e.target.value);invalidate();}}/></label>
@@ -128,7 +160,7 @@ export default function ScienceWorkspace({active=true,view,observation,onLoad,on
       <button className="primary-button" disabled={!!busy||!ids.length} onClick={()=>void build()}><RefreshCw size={15}/>Build fixed-sky view</button>
     </div><div className="band-controls"><label className="check-label"><input type="checkbox" checked={subtractZodi} disabled={!!busy} onChange={e=>{setSubtractZodi(e.target.checked);invalidate();}}/>Subtract zodiacal light (ZODI)</label><label className="check-label"><input type="checkbox" checked={filterWave} onChange={e=>{setFilterWave(e.target.checked);invalidate();}}/>Only measurements in selected wavelength interval</label><label>Center / µm<input aria-label="Selected wavelength" type="number" min=".75" max="5" step=".001" value={wave} onChange={e=>{setWave(Number(e.target.value));if(filterWave)invalidate();}}/></label><label>Interval width / µm<input aria-label="Wavelength interval width" type="number" min=".005" max="1" step=".005" value={bandWidth} onChange={e=>{setBandWidth(Number(e.target.value));if(filterWave)invalidate();}}/></label></div></section>
     <details className="panel library-panel" open={!session||view==='archive'}><summary>Observation library <span>{library.length} cached files · {ids.length} selected</span></summary><div className="library-toolbar"><p>Choose up to 12 distinct files. Matching array dimensions do not establish sky alignment.</p><button className="secondary-button" disabled={!!busy} onClick={onUpload}><Upload size={14}/>Upload FITS</button><button className="icon-button" aria-label="Refresh observation library" onClick={()=>void refresh().catch(e=>setError(e.message))}><RefreshCw size={15}/></button></div><div className="library-list">{library.map(o=><label key={o.id} className="library-row"><input type="checkbox" checked={ids.includes(o.id)} disabled={!ids.includes(o.id)&&ids.length>=12} onChange={e=>{setIds(old=>e.target.checked?[...old,o.id]:old.filter(id=>id!==o.id));invalidate();}}/><span><strong title={o.filename}>{o.observation?.value||o.filename} · D{o.detector?.value||'?'}</strong><small>{String(o.timestamp?.value||'Timestamp unavailable')} · {o.shape[1]} × {o.shape[0]} pixels</small></span><span className="mono">{number(o.spectral?.min_um,3)}–{number(o.spectral?.max_um,3)} µm</span><button type="button" className="text-link" onClick={e=>{e.preventDefault();onLoad(o);}}>Open</button></label>)}</div></details>
-    {(view==='archive'||!session)&&<section className="panel archive-panel"><div className="panel-title"><h2>Find real observations</h2><a className="text-link" href="https://caltech-ipac.github.io/spherex-archive-documentation/spherex-data-access/" target="_blank" rel="noreferrer">IRSA SIA2 documentation <ExternalLink size={12}/></a></div><div className="archive-controls"><label>Collection<select value={collection} onChange={e=>setCollection(e.target.value)}>{['spherex_dr1','spherex_dr1_deep','spherex_qr3','spherex_qr3_deep'].map(c=><option key={c}>{c}</option>)}</select></label><label>Show detector<select value={detector} onChange={e=>setDetector(e.target.value)}>{['all','1','2','3','4','5','6'].map(d=><option key={d} value={d}>{d==='all'?'All detectors':`Detector ${d}`}</option>)}</select></label><button className="secondary-button" disabled={!!busy||!ra||!dec} onClick={()=>void searchArchive()}><Search size={15}/>Search IRSA at this position</button></div><p className="lab-note">Search is centered on the fixed-sky coordinates above. Downloads are small cutouts sized to the chosen field; no full-frame copies or artificial dates are generated.</p>{visibleRows.length>0&&<div className="archive-controls">
+    {(view==='archive'||!session)&&<section className="panel archive-panel"><div className="panel-title"><h2>Find real observations</h2><a className="text-link" href="https://caltech-ipac.github.io/spherex-archive-documentation/spherex-data-access/" target="_blank" rel="noreferrer">IRSA SIA2 documentation <ExternalLink size={12}/></a></div><div className="archive-controls"><label>Collection<select value={collection} onChange={e=>setCollection(e.target.value)}>{['spherex_dr1','spherex_dr1_deep','spherex_qr3','spherex_qr3_deep'].map(c=><option key={c}>{c}</option>)}</select></label><label>Show detector<select value={detector} onChange={e=>setDetector(e.target.value)}>{['all','1','2','3','4','5','6'].map(d=><option key={d} value={d}>{d==='all'?'All detectors':`Detector ${d}`}</option>)}</select></label><button className="secondary-button" disabled={!!busy||!ra||!dec} onClick={()=>void searchArchive()}><Search size={15}/>Search IRSA at this position</button></div><p className="lab-note">Search is centered on the fixed-sky coordinates above. Downloads use the cutout size above and are saved to the observation library.</p>{visibleRows.length>0&&<div className="archive-controls">
       <label>Number of cutouts<select aria-label="Number of cutouts" value={downloadCount} disabled={!!busy} onChange={e=>setDownloadCount(Number(e.target.value))}>{[5,10,25,50,100,200].map(count=><option key={count} value={count}>{count}</option>)}</select></label>
       <button className="primary-button" disabled={!!busy} onClick={()=>void downloadRegion()}><Download size={15}/>Download {Math.min(downloadCount,visibleRows.length)} cutouts</button>
       <p className="lab-note">Downloads the first matching results at this position and detector filter. Each cutout covers a {number(sizeDeg,3)}° field. Files are saved to the backend library.</p>

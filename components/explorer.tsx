@@ -55,7 +55,7 @@ function Help({ onClose }: { onClose: () => void }) {
     <div className="guide-step"><span>01</span><div><h3>Bring your observation</h3><p>Upload an uncompressed FITS file up to 256 MiB, or configure <code>SPHEREX_FITS_PATH</code> on the Python service.</p></div></div>
     <div className="guide-step"><span>02</span><div><h3>Read the detector</h3><p>Switch between IMAGE, VARIANCE, FLAGS, and ZODI. Click to inspect a pixel, drag to pan, and use the toolbar to zoom. Transparent pixels are missing or masked.</p></div></div>
     <div className="guide-step"><span>03</span><div><h3>Inspect the evidence</h3><p>The pixel inspector reports native values, ICRS coordinates, and calibrated wavelength when available. Data Inspector exposes original headers, units, dimensions, and calibration table columns.</p></div></div>
-    <div className="notice"><Info size={17} /><p>A single exposure samples different wavelengths at different detector positions. It does not contain a complete spectrum at each sky position. Open Find observations to load additional real cutouts, then build a fixed-sky workspace for timeline, comparison, and candidate tools.</p></div>
+    <div className="notice"><Info size={17} /><p>A single exposure samples different wavelengths at different detector positions. It does not contain a complete spectrum at each sky position. Open Downloads to load additional real cutouts, then build a fixed-sky workspace for timeline, comparison, and candidate tools.</p></div>
     <p className="muted">Keyboard: focus the detector canvas, press Enter to inspect its center, use arrow keys to move the selection, + / − to zoom, and 0 to fit the image.</p>
     <a className="text-link" href="https://caltech-ipac.github.io/spherex-archive-documentation/spherex-data-products/" target="_blank" rel="noreferrer">Read the official IRSA data guide <ExternalLink size={14} /></a>
   </dialog>;
@@ -89,9 +89,10 @@ export default function Explorer({ active = true, destination }: { active?: bool
   const input = useRef<HTMLInputElement>(null);
   const uploadLock = useRef(false);
 
-  function acceptObservation(obs: Observation) {
+  function acceptObservation(obs: Observation, keepView = false) {
     setObservation(obs); setLayer("IMAGE"); setPixel(null); setSelected(null); setLimits(""); setLow(""); setHigh("");
-    setView("explore"); setError(""); setConnected(true); setRa(""); setDec(""); setLocationError("");
+    if (!keepView) setView("explore");
+    setError(""); setConnected(true); setRa(""); setDec(""); setLocationError("");
     setHeaderExtension("PRIMARY");
     localStorage.setItem("spherex-observation", obs.id);
   }
@@ -102,11 +103,11 @@ export default function Explorer({ active = true, destination }: { active?: bool
       await request("/health", { signal }); setConnected(true);
       const saved = localStorage.getItem("spherex-observation");
       if (saved) {
-        try { acceptObservation(await request<Observation>(`/observations/${saved}`, { signal })); return; }
+        try { acceptObservation(await request<Observation>(`/observations/${saved}`, { signal }), true); return; }
         catch (e) { if (signal?.aborted) throw e; localStorage.removeItem("spherex-observation"); }
       }
       const data = await request<{ observation: Observation | null }>("/observations/default", { signal });
-      if (data.observation) acceptObservation(data.observation);
+      if (data.observation) acceptObservation(data.observation, true);
     } catch (e) {
       if (!signal?.aborted) { setConnected(false); setError(e instanceof Error ? e.message : "Could not connect to the science service."); }
     } finally { if (!signal?.aborted) setConnecting(false); }
@@ -137,7 +138,7 @@ export default function Explorer({ active = true, destination }: { active?: bool
   }, [observation, layer, selected]);
 
   const isWorkspace = view !== "explore" && view !== "inspector";
-  const viewLabel = ({ explore: "Explore", inspector: "Data Inspector", wavelengths: "Wavelengths", timeline: "Timeline", difference: "Difference", investigate: "Investigate", archive: "Archive" })[view];
+  const viewLabel = ({ explore: "Explore", inspector: "Data Inspector", wavelengths: "Wavelengths", timeline: "Timeline", difference: "Difference", investigate: "Investigate", archive: "Downloads" })[view];
   useEffect(() => { if (active && destination) setView(destination); }, [active, destination]);
   useEffect(() => { const update = (event: Event) => acceptObservation((event as CustomEvent<Observation>).detail); window.addEventListener("spherex-observation-changed", update); return () => window.removeEventListener("spherex-observation-changed", update); }, []);
   const stats = observation?.stats[layer];
@@ -173,7 +174,7 @@ export default function Explorer({ active = true, destination }: { active?: bool
         <button className={view === "inspector" ? "nav-item current" : "nav-item"} onClick={() => showHeaders()}><Database size={17} /> Data Inspector <span className="nav-shortcut">02</span></button>
       </nav>
       <div className="nav-label later-label">SCIENCE WORKSPACE</div>
-      <nav aria-label="Science navigation">{([['wavelengths','Wavelengths',Waves],['timeline','Timeline',Radio],['difference','Difference imaging',Layers3],['investigate','Investigate',Crosshair],['archive','Find observations',Search]] as const).map(([key,label,Icon])=><button key={key} className={view===key?'nav-item current':'nav-item'} aria-label={label} onClick={()=>setView(key)}><Icon size={17}/>{label}</button>)}</nav>
+      <nav aria-label="Science navigation">{([['wavelengths','Wavelengths',Waves],['timeline','Timeline',Radio],['difference','Difference imaging',Layers3],['investigate','Investigate',Crosshair],['archive','Downloads',ArrowDownToLine]] as const).map(([key,label,Icon])=><button key={key} className={view===key?'nav-item current':'nav-item'} aria-label={label} onClick={()=>setView(key)}><Icon size={17}/>{label}</button>)}</nav>
       <div className="sidebar-file"><span className="nav-label">ACTIVE OBSERVATION</span>{observation ? <><div className="active-file"><FileCode2 size={20} /><div><strong title={observation.filename}>{observation.filename}</strong><small>{number(observation.bytes / 1024 / 1024, 1)} MiB · {observation.extensions.length} HDUs</small></div><span className="status-dot" /></div><button className="sidebar-import" onClick={() => input.current?.click()} disabled={uploadDisabled}><RefreshCw size={13} /> Replace observation</button></> : <><p>No observation loaded.</p><button className="sidebar-import" onClick={() => input.current?.click()} disabled={uploadDisabled}><PlusIcon /> Import a FITS file</button></>}</div>
       <div className="sidebar-bottom"><div className="science-note"><ShieldCheck size={18} /><span>Real files. Traceable science.<small>No simulated sky measurements.</small></span></div><button className="guide-button" onClick={() => setHelp(true)}><BookOpen size={16} /> Quick-start guide <ChevronRight size={14} /></button><a className="archive-link" href="https://irsa.ipac.caltech.edu/Missions/spherex.html" target="_blank" rel="noreferrer">NASA / IPAC IRSA <ExternalLink size={12} /></a><div className="version-label">REAL-DATA EXPLORER · v0.2</div></div>
     </aside>

@@ -38,8 +38,8 @@ You can also upload an uncompressed FITS file (up to 256 MiB), or set `SPHEREX_F
 
 ## Download several observations of one sky region
 
-1. Open **Complex → Find observations** (or **Find more real observations** in Simple).
-2. Enter **RA and Dec in decimal degrees** under **Fixed sky region**. For the starter field, try RA `304.52129078`, Dec `39.07848168`.
+1. Open **Downloads** from Simple or Complex.
+2. Choose **Cutout size** (3–60 arcmin). To get started without searching, click **Download sample** for two real observations of the same field. To download your own region, enter **RA and Dec in decimal degrees** under **Fixed sky region**. For the starter field, try RA `304.52129078`, Dec `39.07848168`.
 3. Select an archive collection and click **Search IRSA at this position**. Filter by detector if desired; the detector number alone does not guarantee matching wavelengths.
 4. Choose a count and click **Download N cutouts**. This takes the first matching results shown, downloading each at the same sky position and cutout size. **Add cutout** is still available for individual files.
 5. Open **Observation library** to see successful downloads. Choose up to 12 observations and build a fixed-sky view to compare them. The download limit is separate from the 12-frame comparison limit.
@@ -74,7 +74,7 @@ The observation timestamp comes from `DATE-OBS` or explicitly identified observa
 
 ## Science workspace: Phases 2–5
 
-All sidebar science sections are functional. Start with **Find observations** or select cached files in any science workspace. Enter ICRS coordinates, select up to 12 observations, and choose **Build fixed-sky view**. The region remains fixed when changing dates or wavelengths. A library row can open its native detector view. Uploading another file adds it to the library.
+All sidebar science sections are functional. Start with **Downloads** or select cached files in any science workspace. Enter ICRS coordinates, select up to 12 observations, and choose **Build fixed-sky view**. The region remains fixed when changing dates or wavelengths. A library row can open its native detector view. Uploading another file adds it to the library.
 
 - **Wavelengths:** a 0.75–5 µm detector slider shows native pixels whose measured central wavelengths fall within the requested interval. Missing coverage is transparent. The alternate calibration-map mode displays the actual wavelength lookup. For a fixed-sky wavelength view, enable the interval filter and rebuild. The combined view uses inverse-variance weighting of compatible registered measurements, with no filling of missing sky coverage.
 - **Timeline:** actual FITS observation timestamps, date selection, Previous/Next, Play/Pause, speed controls, shared brightness limits, and aligned-pair blinking. Frames are WCS-reprojected onto an explicit ICRS TAN grid. Playback uses distinct covered dates; fewer than two dates disables animation. A frame without usable coverage stays transparent. Clicking a source inspects the sky-grid pixel and measures the same sky position across selected observations.
